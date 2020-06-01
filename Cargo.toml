@@ -1,0 +1,16 @@
+[package]
+name = "aaron-asm"
+version = "0.1.0"
+authors = ["saito"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+num-bigint = "0.2.6"
+num-traits = "0.2.11"
+peg = "0.6.2"
+
+[lib]
+path = "src/lib.rs"
+name = "aaron_asm"
