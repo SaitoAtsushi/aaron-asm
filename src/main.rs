@@ -18,7 +18,7 @@ fn main() {
         };
         let mut contents = String::new();
         file.read_to_string(&mut contents).unwrap();
-        let program = compile(&contents);
+        let program = contents.parse();
         match program {
             Ok(program) => {
                 let mut machine = MachineState::new();

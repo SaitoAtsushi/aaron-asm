@@ -1,4 +1,3 @@
-
 extern crate num_bigint;
 extern crate num_traits;
 pub type Number = num_bigint::BigInt;
@@ -248,10 +247,16 @@ peg::parser! {
     }
 }
 
-pub fn compile(source: &str) -> std::result::Result<Program, String> {
-    let ast = aaron_parser::parse(source);
-    match ast {
-        Ok(ast) => Ok(ast),
-        Err(a) => Err(format!("parse error on Line {}", a.location)),
+use std::str::FromStr;
+
+impl FromStr for Program {
+    type Err = String;
+
+    fn from_str(source: &str) -> std::result::Result<Program, String> {
+        let ast = aaron_parser::parse(source);
+        match ast {
+            Ok(ast) => Ok(ast),
+            Err(a) => Err(format!("parse error on Line {}", a.location)),
+        }
     }
 }
