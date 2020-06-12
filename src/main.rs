@@ -1,6 +1,3 @@
-extern crate num_bigint;
-extern crate num_traits;
-extern crate peg;
 
 extern crate aaron_asm;
 
