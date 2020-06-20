@@ -14,3 +14,8 @@ peg = "0.6.2"
 [lib]
 path = "src/lib.rs"
 name = "aaron_asm"
+
+[profile.release]
+lto = true
+panic = "abort"
+codegen-units = 1
