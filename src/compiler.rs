@@ -23,6 +23,7 @@ pub enum Value {
     Immediate(Number),
     Register(Number),
     Pointer(Number),
+    Label(String),
     ProgramCounter,
 }
 
@@ -32,7 +33,22 @@ impl fmt::Display for Value {
             Value::Immediate(ref n) => write!(f, "{}", n),
             Value::Register(ref n) => write!(f, "[{}]", n),
             Value::Pointer(ref n) => write!(f, "[[{}]]", n),
+            Value::Label(ref n) => write!(f, "{}", n),
             Value::ProgramCounter => write!(f, "pc"),
+        }
+    }
+}
+
+impl Value {
+    fn solve(&self, labels: &HashMap<&String, Number>) -> Option<Value> {
+        if let Value::Label(ref n) = self {
+            if let Some(a) = labels.get(&n) {
+                Some(Value::Immediate(a.clone()))
+            } else {
+                None
+            }
+        } else {
+            Some(self.clone())
         }
     }
 }
@@ -52,6 +68,20 @@ impl fmt::Display for Address {
             Address::Register(ref n) => write!(f, "[{}]", n),
             Address::Label(ref n) => write!(f, "{}", n),
             Address::ProgramCounter => write!(f, "pc"),
+        }
+    }
+}
+
+impl Address {
+    fn solve(&self, labels: &HashMap<&String, Number>) -> Option<Address> {
+        if let Address::Label(ref n) = self {
+            if let Some(a) = labels.get(&n) {
+                Some(Address::Immediate(a.clone()))
+            } else {
+                None
+            }
+        } else {
+            Some(self.clone())
         }
     }
 }
@@ -178,29 +208,27 @@ impl fmt::Display for Program {
 }
 
 impl Program {
-    fn new(ast: Ast) -> Result<Program, &'static str> {
+    fn new(ast: Ast) -> Option<Program> {
         let labels = ast.collect_labels();
         let mut program = Vec::<Statement>::new();
         for x in ast.iter() {
             match &x.statement {
-                Statement::Decr(index, Address::Label(label), value) => match &labels.get(&label) {
-                    Some(&ref n) => {
-                        program.push(Statement::Decr(
-                            index.clone(),
-                            Address::Immediate(n.clone()),
-                            value.clone(),
-                        ));
-                    }
-                    None => {
-                        return Err("unknown label");
-                    }
-                },
-                x => {
-                    program.push(x.clone());
+                Statement::Decr(index, address, value) => program.push(Statement::Decr(
+                    index.clone(),
+                    address.solve(&labels)?.clone(),
+                    value.solve(&labels)?,
+                )),
+                Statement::Incr(index, value) => {
+                    program.push(Statement::Incr(index.clone(), value.solve(&labels)?))
                 }
+                Statement::Save(index, value) => {
+                    program.push(Statement::Save(index.clone(), value.solve(&labels)?))
+                }
+
+                Statement::Halt => program.push(Statement::Halt),
             }
         }
-        Ok(Program(program))
+        Some(Program(program))
     }
 }
 
@@ -219,7 +247,7 @@ peg::parser! {
         rule value() -> Value
             = "[[" many_space() n:number() many_space() "]]" {Value::Pointer(n)}
             / "[" many_space() n:number() many_space() "]" {Value::Register(n)}
-            / "pc" {Value::ProgramCounter}
+            / i:ident() {if i=="pc" {Value::ProgramCounter} else {Value::Label(i)}}
             / n:number() {Value::Immediate(n)}
         rule address() -> Address
             = "[" many_space() n:number() many_space() "]" {Address::Register(n)}
@@ -243,7 +271,7 @@ peg::parser! {
             / "halt" {Statement::Halt}
         rule line() -> Line
             = (comment() "\n")? label:ident()? many_space() c:command() comment() {Line::new(label, c)}
-        pub rule parse() -> Program = v:line() ** "\n" (comment() ** "\n")? {? Program::new(Ast(v)) }
+        pub rule parse() -> Program = v:line() ** "\n" (comment() ** "\n")? {? Program::new(Ast(v)).ok_or("unknown label") }
     }
 }
 

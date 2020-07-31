@@ -29,6 +29,7 @@ impl OperandEval<Value> for MachineState {
             &Value::Register(ref x) => self.register(x),
             &Value::Pointer(ref x) => self.register(&self.register(x)),
             &Value::ProgramCounter => self.program_counter.clone(),
+            _ => panic!("Invalid operand"),
         }
     }
 }
