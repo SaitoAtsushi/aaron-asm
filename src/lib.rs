@@ -37,4 +37,15 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn labelvalue_test() -> Result<(), Box<dyn std::error::Error>> {
+        let program = include_str!("../testcase/labelvalue.asm").parse()?;
+        let mut machine = vm::MachineState::new();
+        assert_eq!(
+            machine.run(&program),
+            BigInt::from_str("10")?
+        );
+        Ok(())
+    }
 }
