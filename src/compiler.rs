@@ -282,7 +282,7 @@ peg::parser! {
             / "halt" {Statement::Halt}
         rule line() -> Line
             = (comment() "\n")? label:ident()? many_space() c:command() comment() {Line::new(label, c)}
-        pub rule parse() -> Program = v:line() ** "\n" (comment() ** "\n")? {? Program::new(Ast(v)).ok_or("unknown label") }
+        pub rule parse() -> Program = v:line() ** ("\r"? "\n") (comment() ** ("\r"? "\n"))? {? Program::new(Ast(v)).ok_or("unknown label") }
     }
 }
 
