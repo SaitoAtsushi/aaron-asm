@@ -91,6 +91,8 @@ pub enum Statement {
     Incr(Index, Value),
     Decr(Index, Address, Value),
     Save(Index, Value),
+    Putc(Value),
+    Putn(Value),
     Halt,
 }
 
@@ -100,6 +102,8 @@ impl fmt::Display for Statement {
             Statement::Incr(ref i, ref v) => write!(f, "incr {}, {}", i, v),
             Statement::Decr(ref i, ref a, ref v) => write!(f, "decr {}, {}, {}", i, a, v),
             Statement::Save(ref i, ref v) => write!(f, "save {}, {}", i, v),
+            Statement::Putc(ref v) => write!(f, "putc {}", v),
+            Statement::Putn(ref v) => write!(f, "putn {}", v),
             Statement::Halt => write!(f, "halt"),
         }
     }
@@ -224,7 +228,12 @@ impl Program {
                 Statement::Save(index, value) => {
                     program.push(Statement::Save(index.clone(), value.solve(&labels)?))
                 }
-
+                Statement::Putc(value) => {
+                    program.push(Statement::Putc(value.solve(&labels)?))
+                }
+                Statement::Putn(value) => {
+                    program.push(Statement::Putn(value.solve(&labels)?))
+                }
                 Statement::Halt => program.push(Statement::Halt),
             }
         }
@@ -268,6 +277,8 @@ peg::parser! {
                 }
             }
             / "save" many_space() i:index() separator() v:value() { Statement::Save(i,v) }
+            / "putc" many_space() v:value() { Statement::Putc(v)}
+            / "putn" many_space() v:value() { Statement::Putn(v)}
             / "halt" {Statement::Halt}
         rule line() -> Line
             = (comment() "\n")? label:ident()? many_space() c:command() comment() {Line::new(label, c)}

@@ -93,6 +93,16 @@ impl MachineState {
                     let value = self.eval(value);
                     *self.register_mut(index) = value;
                 }
+                &Statement::Putc(ref value) => {
+                    self.program_counter += 1;
+                    let value = self.eval(value);
+                    print!("{}", std::char::from_u32(value.to_u32().unwrap()).unwrap());
+                }
+                &Statement::Putn(ref value) => {
+                    self.program_counter += 1;
+                    let value = self.eval(value);
+                    print!("{}", value);
+                }
                 &Statement::Halt => {
                     break;
                 }
