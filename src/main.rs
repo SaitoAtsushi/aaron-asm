@@ -33,7 +33,9 @@ fn main() {
         file.read_to_string(&mut contents).unwrap();
         let program = contents.parse();
         let program = program.if_error_then_exit();
-        let mut machine = MachineState::new();
+        let stdout = std::io::stdout();
+        let mut handle = stdout.lock();
+        let mut machine = MachineState::new(&mut handle);
         println!("{}", machine.run(&program));
     } else {
         eprintln!("Command line argument is invalid");

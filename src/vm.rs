@@ -4,16 +4,17 @@ extern crate num_traits;
 use num_traits::ToPrimitive;
 const MEMORY_LIMIT: usize = 100000;
 
-pub struct MachineState {
+pub struct MachineState<'a, T: std::io::Write> {
     registers: Vec<Number>,
     program_counter: Number,
+    output: &'a mut T,
 }
 
 trait OperandEval<T> {
     fn eval<'a>(&'a mut self, i: &'a T) -> Number;
 }
 
-impl OperandEval<Index> for MachineState {
+impl<'b, T: std::io::Write> OperandEval<Index> for MachineState<'b, T> {
     fn eval<'a>(&'a mut self, i: &'a Index) -> Number {
         match &i {
             &Index::Direct(ref x) => x.clone(),
@@ -22,7 +23,7 @@ impl OperandEval<Index> for MachineState {
     }
 }
 
-impl OperandEval<Value> for MachineState {
+impl<'b, T: std::io::Write> OperandEval<Value> for MachineState<'b, T> {
     fn eval<'a>(&'a mut self, i: &'a Value) -> Number {
         match &i {
             &Value::Immediate(ref x) => x.clone(),
@@ -34,7 +35,7 @@ impl OperandEval<Value> for MachineState {
     }
 }
 
-impl OperandEval<Address> for MachineState {
+impl<'b, T: std::io::Write> OperandEval<Address> for MachineState<'b, T> {
     fn eval<'a>(&'a mut self, i: &'a Address) -> Number {
         match &i {
             &Address::Immediate(ref x) => x.clone(),
@@ -45,11 +46,12 @@ impl OperandEval<Address> for MachineState {
     }
 }
 
-impl MachineState {
-    pub fn new() -> MachineState {
+impl<'b, T: std::io::Write> MachineState<'b, T> {
+    pub fn new(o: &'b mut T) -> MachineState<'b, T> {
         MachineState {
             registers: vec![Number::from(0)], // Vec::with_capacity(FIRST_MEMORY_SIZE),
             program_counter: Default::default(),
+            output: o,
         }
     }
 
@@ -96,12 +98,12 @@ impl MachineState {
                 &Statement::Putc(ref value) => {
                     self.program_counter += 1;
                     let value = self.eval(value);
-                    print!("{}", std::char::from_u32(value.to_u32().unwrap()).unwrap());
+                    write!(self.output, "{}", std::char::from_u32(value.to_u32().unwrap()).unwrap()).unwrap();
                 }
                 &Statement::Putn(ref value) => {
                     self.program_counter += 1;
                     let value = self.eval(value);
-                    print!("{}", value);
+                    write!(self.output, "{}", value).unwrap();
                 }
                 &Statement::Halt => {
                     break;
@@ -144,11 +146,5 @@ impl MachineState {
                 std::process::exit(5);
             }
         }
-    }
-}
-
-impl Default for MachineState {
-    fn default() -> MachineState {
-        MachineState::new()
     }
 }

@@ -14,7 +14,9 @@ mod tests {
     #[test]
     fn factorial_test() -> Result<(), Box<dyn std::error::Error>> {
         let program = include_str!("../testcase/factorial.asm").parse()?;
-        let mut machine = vm::MachineState::new();
+        let stdout = std::io::stdout();
+        let mut handle = stdout.lock();
+        let mut machine = vm::MachineState::new(&mut handle);
         assert_eq!(machine.run(&program), BigInt::from(120));
         Ok(())
     }
@@ -22,7 +24,9 @@ mod tests {
     #[test]
     fn square_test() -> Result<(), Box<dyn std::error::Error>> {
         let program = include_str!("../testcase/square.asm").parse()?;
-        let mut machine = vm::MachineState::new();
+        let stdout = std::io::stdout();
+        let mut handle = stdout.lock();
+        let mut machine = vm::MachineState::new(&mut handle);
         assert_eq!(machine.run(&program), BigInt::from(55));
         Ok(())
     }
@@ -30,7 +34,9 @@ mod tests {
     #[test]
     fn fibonacci_test() -> Result<(), Box<dyn std::error::Error>> {
         let program = include_str!("../testcase/fibonacci.asm").parse()?;
-        let mut machine = vm::MachineState::new();
+        let stdout = std::io::stdout();
+        let mut handle = stdout.lock();
+        let mut machine = vm::MachineState::new(&mut handle);
         assert_eq!(
             machine.run(&program),
             BigInt::from_str("354224848179261915075")?
@@ -41,7 +47,9 @@ mod tests {
     #[test]
     fn labelvalue_test() -> Result<(), Box<dyn std::error::Error>> {
         let program = include_str!("../testcase/labelvalue.asm").parse()?;
-        let mut machine = vm::MachineState::new();
+        let stdout = std::io::stdout();
+        let mut handle = stdout.lock();
+        let mut machine = vm::MachineState::new(&mut handle);
         assert_eq!(
             machine.run(&program),
             BigInt::from_str("10")?
