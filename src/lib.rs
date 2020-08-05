@@ -1,4 +1,5 @@
 pub use vm::MachineState;
+pub use compiler::Program;
 
 mod compiler;
 mod vm;
