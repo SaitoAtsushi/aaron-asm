@@ -40,15 +40,17 @@ impl fmt::Display for Value {
 }
 
 impl Value {
-    fn solve(&self, labels: &HashMap<&String, Number>) -> Option<Value> {
-        if let Value::Label(ref n) = self {
-            if let Some(a) = labels.get(&n) {
-                Some(Value::Immediate(a.clone()))
-            } else {
-                None
+    fn solve(&self, labels: &HashMap<&String, Number>, pc: usize) -> Option<Value> {
+        match self {
+            Value::Label(ref n) => {
+                if let Some(a) = labels.get(&n) {
+                    Some(Value::Immediate(a.clone()))
+                } else {
+                    None
+                }
             }
-        } else {
-            Some(self.clone())
+            Value::ProgramCounter => Some(Value::Immediate(Number::from(pc + 1))),
+            _ => Some(self.clone()),
         }
     }
 }
@@ -73,15 +75,17 @@ impl fmt::Display for Address {
 }
 
 impl Address {
-    fn solve(&self, labels: &HashMap<&String, Number>) -> Option<Address> {
-        if let Address::Label(ref n) = self {
-            if let Some(a) = labels.get(&n) {
-                Some(Address::Immediate(a.clone()))
-            } else {
-                None
+    fn solve(&self, labels: &HashMap<&String, Number>, pc: usize) -> Option<Address> {
+        match self {
+            Address::Label(ref n) => {
+                if let Some(a) = labels.get(&n) {
+                    Some(Address::Immediate(a.clone()))
+                } else {
+                    None
+                }
             }
-        } else {
-            Some(self.clone())
+            Address::ProgramCounter => Some(Address::Immediate(Number::from(pc + 1))),
+            _ => Some(self.clone()),
         }
     }
 }
@@ -215,25 +219,21 @@ impl Program {
     fn new(ast: Ast) -> Option<Program> {
         let labels = ast.collect_labels();
         let mut program = Vec::<Statement>::new();
-        for x in ast.iter() {
+        for (pc, x) in ast.iter().enumerate() {
             match &x.statement {
                 Statement::Decr(index, address, value) => program.push(Statement::Decr(
                     index.clone(),
-                    address.solve(&labels)?.clone(),
-                    value.solve(&labels)?,
+                    address.solve(&labels, pc)?.clone(),
+                    value.solve(&labels, pc)?,
                 )),
                 Statement::Incr(index, value) => {
-                    program.push(Statement::Incr(index.clone(), value.solve(&labels)?))
+                    program.push(Statement::Incr(index.clone(), value.solve(&labels, pc)?))
                 }
                 Statement::Save(index, value) => {
-                    program.push(Statement::Save(index.clone(), value.solve(&labels)?))
+                    program.push(Statement::Save(index.clone(), value.solve(&labels, pc)?))
                 }
-                Statement::Putc(value) => {
-                    program.push(Statement::Putc(value.solve(&labels)?))
-                }
-                Statement::Putn(value) => {
-                    program.push(Statement::Putn(value.solve(&labels)?))
-                }
+                Statement::Putc(value) => program.push(Statement::Putc(value.solve(&labels, pc)?)),
+                Statement::Putn(value) => program.push(Statement::Putn(value.solve(&labels, pc)?)),
                 Statement::Halt => program.push(Statement::Halt),
             }
         }
