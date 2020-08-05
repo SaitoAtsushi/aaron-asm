@@ -1,7 +1,6 @@
 # Implementation of Aaron's virtual machine
 
-このプログラムは [Aaron 氏による仮想機械](https://takumim97.hatenablog.com/entry/2019/09/10/091018)の実装です。
-アセンブリ言語形式で表現したものを実行します。
+このプログラムは [Aaron 氏による仮想機械](https://takumim97.hatenablog.com/entry/2020/08/05/165606)の実装です。 [拡張命令表現仕様](https://takumim97.hatenablog.com/entry/2020/08/05/165401)に相当する表現をもつアセンブリ言語風のフォーマットを許容します。
 
 ## 実行環境要件
 
@@ -111,4 +110,10 @@ $ cargo install
 
 ```console
 $ aaron-asm [filename]
+```
+
+オプション `-c` を付けると実行はせずにコア命令表現のみの形で出力します。
+
+```console
+$ aaron-asm -c [filename]
 ```
