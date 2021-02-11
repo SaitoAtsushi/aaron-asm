@@ -1,7 +1,8 @@
+pub use syntax_tree::Program;
 pub use vm::MachineState;
-pub use compiler::Program;
 
 mod compiler;
+mod syntax_tree;
 mod vm;
 
 #[cfg(test)]
@@ -51,10 +52,7 @@ mod tests {
         let stdout = std::io::stdout();
         let mut handle = stdout.lock();
         let mut machine = vm::MachineState::new(&mut handle);
-        assert_eq!(
-            machine.run(&program),
-            BigInt::from_str("10")?
-        );
+        assert_eq!(machine.run(&program), BigInt::from_str("10")?);
         Ok(())
     }
 }

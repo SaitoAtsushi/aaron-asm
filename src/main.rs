@@ -1,6 +1,4 @@
-extern crate aaron_asm;
-
-use aaron_asm::*;
+use aaron_asm::MachineState;
 use std::fs::File;
 use std::io::prelude::*;
 

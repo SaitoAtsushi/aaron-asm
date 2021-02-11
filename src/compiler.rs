@@ -1,289 +1,323 @@
-extern crate num_bigint;
-extern crate num_traits;
-pub type Number = num_bigint::BigInt;
+use crate::syntax_tree::*;
 
-use std::fmt;
-#[derive(Clone)]
-pub enum Index {
-    Direct(Number),
-    Indirect(Number),
+#[derive(Debug)]
+pub enum ParseError {
+    InvalidLabel,
+    InvalidIdentifier,
+    LabelOnly,
+    UnknownMnemonic,
+    UnclosedBracket,
+    ExpectInteger,
+    ExpectValue,
+    ExtraZero,
+    ExtraOperand,
+    TooFewArguments,
+    ExpectAddress,
+    EndOfProgram,
 }
 
-impl fmt::Display for Index {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Index::Direct(ref n) => write!(f, "{}", n),
-            Index::Indirect(ref n) => write!(f, "[{}]", n),
+type ParseResult<'a, T> = std::result::Result<(T, &'a str), ParseError>;
+
+fn is_space(ch: char) -> bool {
+    ch == ' ' || ch == '\t'
+}
+
+fn parse_one(input: &str, predicate: impl Fn(char) -> bool) -> Option<(char, &str)> {
+    let mut iter = input.chars();
+    iter.next().and_then(|ch| {
+        if predicate(ch) {
+            Some((ch, iter.as_str()))
+        } else {
+            None
         }
+    })
+}
+
+fn parse_while(input: &str, predicate: impl Fn(char) -> bool) -> (&str, &str) {
+    if let Some(pos) = input.find(|ch| !predicate(ch)) {
+        input.split_at(pos)
+    } else {
+        let len = input.len();
+        (input, &input[len..len])
     }
 }
 
-#[derive(Clone)]
-pub enum Value {
-    Immediate(Number),
-    Register(Number),
-    Pointer(Number),
-    Label(String),
-    ProgramCounter,
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Value::Immediate(ref n) => write!(f, "{}", n),
-            Value::Register(ref n) => write!(f, "[{}]", n),
-            Value::Pointer(ref n) => write!(f, "[[{}]]", n),
-            Value::Label(ref n) => write!(f, "{}", n),
-            Value::ProgramCounter => write!(f, "pc"),
-        }
+fn parse_skip(input: &str, predicate: impl Fn(char) -> bool) -> &str {
+    if let Some(pos) = input.find(|ch| !predicate(ch)) {
+        &input[pos..]
+    } else {
+        &input[input.len()..]
     }
 }
 
-impl Value {
-    fn solve(&self, labels: &HashMap<&String, Number>, pc: usize) -> Option<Value> {
-        match self {
-            Value::Label(ref n) => {
-                if let Some(a) = labels.get(&n) {
-                    Some(Value::Immediate(a.clone()))
-                } else {
-                    None
-                }
-            }
-            Value::ProgramCounter => Some(Value::Immediate(Number::from(pc + 1))),
-            _ => Some(self.clone()),
-        }
+fn parse_skip_until(input: &str, predicate: impl Fn(char) -> bool) -> &str {
+    if let Some(pos) = input.find(|ch| predicate(ch)) {
+        let mut iter = input[pos..].chars();
+        iter.next();
+        iter.as_str()
+    } else {
+        &input[input.len()..]
     }
 }
 
-#[derive(Clone)]
-pub enum Address {
-    Immediate(Number),
-    Register(Number),
-    ProgramCounter,
-    Label(String),
+fn skip_space(input: &str) -> &str {
+    parse_skip(input, |ch| ch == ' ' || ch == '\t')
 }
 
-impl fmt::Display for Address {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Address::Immediate(ref n) => write!(f, "{}", n),
-            Address::Register(ref n) => write!(f, "[{}]", n),
-            Address::Label(ref n) => write!(f, "{}", n),
-            Address::ProgramCounter => write!(f, "pc"),
+fn skip_comment(input: &str) -> &str {
+    parse_skip_until(input, |ch| ch == '\n')
+}
+
+fn parse_label(input: &str) -> ParseResult<Option<String>> {
+    match parse_one(input, |_| true) {
+        Some((ch, _)) if ch.is_ascii_alphabetic() => {
+            let (label, rest) = parse_while(input, |ch| ch.is_ascii_alphanumeric());
+            Ok((Some(String::from_str(label).unwrap()), rest))
         }
+        Some((ch, _)) if is_space(ch) || ch == ';' || ch == '\r' || ch == '\n' => Ok((None, input)),
+        Some(_) => Err(ParseError::InvalidLabel),
+        None => Ok((None, input)),
     }
 }
 
-impl Address {
-    fn solve(&self, labels: &HashMap<&String, Number>, pc: usize) -> Option<Address> {
-        match self {
-            Address::Label(ref n) => {
-                if let Some(a) = labels.get(&n) {
-                    Some(Address::Immediate(a.clone()))
-                } else {
-                    None
-                }
-            }
-            Address::ProgramCounter => Some(Address::Immediate(Number::from(pc + 1))),
-            _ => Some(self.clone()),
-        }
-    }
+fn parse_identifier(input: &str) -> ParseResult<String> {
+    let _ = parse_one(input, |ch| ch.is_ascii_alphabetic()).ok_or(ParseError::InvalidIdentifier);
+    let (label, rest) = parse_while(input, |ch| ch.is_ascii_alphanumeric());
+    Ok((String::from_str(label).unwrap(), rest))
 }
 
-#[derive(Clone)]
-pub enum Statement {
-    Incr(Index, Value),
-    Decr(Index, Address, Value),
-    Save(Index, Value),
-    Putc(Value),
-    Putn(Value),
+enum Mnemonic {
+    Incr,
+    Decr,
+    Save,
+    Putc,
+    Putn,
     Halt,
 }
 
-impl fmt::Display for Statement {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Statement::Incr(ref i, ref v) => write!(f, "incr {}, {}", i, v),
-            Statement::Decr(ref i, ref a, ref v) => write!(f, "decr {}, {}, {}", i, a, v),
-            Statement::Save(ref i, ref v) => write!(f, "save {}, {}", i, v),
-            Statement::Putc(ref v) => write!(f, "putc {}", v),
-            Statement::Putn(ref v) => write!(f, "putn {}", v),
-            Statement::Halt => write!(f, "halt"),
+fn parse_mnemonic(input: &str) -> ParseResult<Mnemonic> {
+    let (mnemonic, rest) = parse_while(input, |ch| ch.is_ascii_alphanumeric());
+    Ok((
+        match mnemonic {
+            "incr" => Mnemonic::Incr,
+            "decr" => Mnemonic::Decr,
+            "save" => Mnemonic::Save,
+            "putc" => Mnemonic::Putc,
+            "putn" => Mnemonic::Putn,
+            "halt" => Mnemonic::Halt,
+            _ => Err(ParseError::UnknownMnemonic)?,
+        },
+        rest,
+    ))
+}
+
+fn skip_extra_field(input: &str) -> std::result::Result<&str, ParseError> {
+    let rest = skip_space(input);
+    match rest.chars().next() {
+        Some(ch) if ch == ';' || ch == '\n' || ch == '\r' => Ok(skip_comment(rest)),
+        Some(_) => Err(ParseError::ExtraOperand),
+        None => Ok(rest),
+    }
+}
+
+fn parse_operand_separator(input: &str) -> std::result::Result<&str, ParseError> {
+    let rest = skip_space(input);
+    let (_, rest) = parse_one(rest, |ch| ch == ',').ok_or(ParseError::TooFewArguments)?;
+    let rest = skip_space(rest);
+    Ok(rest)
+}
+
+fn parse_incr_operand(input: &str) -> ParseResult<Statement> {
+    let (index, rest) = parse_index(input)?;
+    match parse_operand_separator(rest) {
+        Err(_) => Ok((
+            Statement::Incr(index, Value::Immediate(Number::from(1))),
+            rest,
+        )),
+        Ok(rest) => {
+            let (value, rest) = parse_value(rest)?;
+            let rest = skip_space(rest);
+            Ok((Statement::Incr(index, value), skip_extra_field(rest)?))
         }
     }
 }
 
-pub struct Line {
-    label: Option<String>,
-    statement: Statement,
-}
-
-// impl fmt::Display for Line {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         write!(
-//             f,
-//             "{}\t{}",
-//             match &self.label {
-//                 Some(ref label) => &label[..],
-//                 None => "",
-//             },
-//             self.statement
-//         )
-//     }
-// }
-
-impl Line {
-    pub fn new(label: Option<String>, statement: Statement) -> Line {
-        Line { label, statement }
+fn parse_decr_operand(input: &str) -> ParseResult<Statement> {
+    let (index, rest) = parse_index(input)?;
+    let rest = parse_operand_separator(rest)?;
+    let (address, rest) = parse_address(rest)?;
+    match parse_operand_separator(rest) {
+        Err(_) => Ok((
+            Statement::Decr(index, address, Value::Immediate(Number::from(1))),
+            skip_extra_field(rest)?,
+        )),
+        Ok(rest) => {
+            let (value, rest) = parse_value(rest)?;
+            Ok((
+                Statement::Decr(index, address, value),
+                skip_extra_field(rest)?,
+            ))
+        }
     }
 }
 
-struct Ast(pub Vec<Line>);
+fn parse_save_operand(input: &str) -> ParseResult<Statement> {
+    let (index, rest) = parse_index(input)?;
+    let rest = parse_operand_separator(rest)?;
+    let (value, rest) = parse_value(rest)?;
+    let rest = skip_extra_field(rest)?;
+    Ok((Statement::Save(index, value), rest))
+}
 
-use std::ops::{Deref, DerefMut};
+fn parse_putc_operand(input: &str) -> ParseResult<Statement> {
+    let (value, rest) = parse_value(input)?;
+    let rest = skip_extra_field(rest)?;
+    Ok((Statement::Putc(value), rest))
+}
 
-impl Deref for Ast {
-    type Target = Vec<Line>;
-    fn deref(&self) -> &Vec<Line> {
-        &self.0
+fn parse_putn_operand(input: &str) -> ParseResult<Statement> {
+    let (value, rest) = parse_value(input)?;
+    let rest = skip_extra_field(rest)?;
+    Ok((Statement::Putn(value), rest))
+}
+
+fn parse_halt_operand(input: &str) -> ParseResult<Statement> {
+    let rest = skip_extra_field(input)?;
+    Ok((Statement::Halt, rest))
+}
+
+fn parse_command(input: &str) -> ParseResult<Statement> {
+    let (mnemonic, rest) = parse_mnemonic(input)?;
+    let rest = skip_space(rest);
+    match mnemonic {
+        Mnemonic::Incr => parse_incr_operand(rest),
+        Mnemonic::Decr => parse_decr_operand(rest),
+        Mnemonic::Save => parse_save_operand(rest),
+        Mnemonic::Putc => parse_putc_operand(rest),
+        Mnemonic::Putn => parse_putn_operand(rest),
+        Mnemonic::Halt => parse_halt_operand(rest),
     }
 }
 
-impl fmt::Display for Ast {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for x in self.iter() {
-            if let Err(e) = write!(
-                f,
-                "{}\t{}\n",
-                match &x.label {
-                    Some(label) => &label[..],
-                    None => "",
-                },
-                x.statement
-            ) {
-                return Err(e);
+fn parse_integer(input: &str) -> ParseResult<Number> {
+    let (sign, rest) = parse_one(input, |ch| ch == '-').unwrap_or(('+', input));
+    if let Some((_, rest)) = parse_one(rest, |ch| ch == '0') {
+        if let Some(_) = parse_one(rest, |ch| ch.is_ascii_digit()) {
+            return Err(ParseError::ExtraZero);
+        }
+    }
+    if let Some(_) = parse_one(rest, |ch| ch.is_ascii_digit()) {
+        let (num, rest) = parse_while(rest, |ch| ch.is_ascii_digit());
+        let mut num: Number = num.parse().unwrap();
+        if sign == '-' {
+            num = -num
+        }
+        Ok((num, rest))
+    } else {
+        Err(ParseError::ExpectInteger)
+    }
+}
+
+fn parse_index(input: &str) -> ParseResult<Index> {
+    if let Some((_, rest)) = parse_one(input, |ch| ch == '[') {
+        let rest = skip_space(rest);
+        let (num, rest) = parse_integer(rest)?;
+        let rest = skip_space(rest);
+        if let Some((_, rest)) = parse_one(rest, |ch| ch == ']') {
+            Ok((Index::Indirect(num), rest))
+        } else {
+            Err(ParseError::UnclosedBracket)
+        }
+    } else {
+        let (num, rest) = parse_integer(input)?;
+        Ok((Index::Direct(num), rest))
+    }
+}
+
+fn parse_address(input: &str) -> ParseResult<Address> {
+    if let Some((_, rest)) = parse_one(input, |ch| ch == '[') {
+        let rest = skip_space(rest);
+        let (num, rest) = parse_integer(rest)?;
+        let rest = skip_space(rest);
+        let (_, rest) = parse_one(rest, |ch| ch == ']').ok_or(ParseError::UnclosedBracket)?;
+        Ok((Address::Register(num), rest))
+    } else if let Ok((num, rest)) = parse_integer(input) {
+        Ok((Address::Immediate(num), rest))
+    } else if let Ok((ident, rest)) = parse_identifier(input) {
+        if ident == "pc" {
+            Ok((Address::ProgramCounter, rest))
+        } else {
+            Ok((Address::Label(ident), rest))
+        }
+    } else {
+        Err(ParseError::ExpectAddress)
+    }
+}
+
+fn parse_value(input: &str) -> ParseResult<Value> {
+    if let Some((_, rest)) = parse_one(input, |ch| ch == '[') {
+        if let Some((_, rest)) = parse_one(rest, |ch| ch == '[') {
+            let rest = skip_space(rest);
+            let (num, rest) = parse_integer(rest)?;
+            let rest = skip_space(rest);
+            let (_, rest) = parse_one(rest, |ch| ch == ']').ok_or(ParseError::UnclosedBracket)?;
+            let (_, rest) = parse_one(rest, |ch| ch == ']').ok_or(ParseError::UnclosedBracket)?;
+            Ok((Value::Pointer(num), rest))
+        } else {
+            let rest = skip_space(rest);
+            let (num, rest) = parse_integer(rest)?;
+            let rest = skip_space(rest);
+            let (_, rest) = parse_one(rest, |ch| ch == ']').ok_or(ParseError::UnclosedBracket)?;
+            Ok((Value::Register(num), rest))
+        }
+    } else if let Ok((num, rest)) = parse_integer(input) {
+        Ok((Value::Immediate(num), rest))
+    } else if let Ok((ident, rest)) = parse_identifier(input) {
+        if ident == "pc" {
+            Ok((Value::ProgramCounter, rest))
+        } else {
+            Ok((Value::Label(ident), rest))
+        }
+    } else {
+        Err(ParseError::ExpectValue)
+    }
+}
+
+fn parse_line(input: &str) -> ParseResult<Line> {
+    let (label, rest) = parse_label(input)?;
+    let rest = skip_space(rest);
+    match rest.chars().next() {
+        Some(';') | Some('\n') => label.map_or_else(
+            || parse_line(skip_comment(rest)),
+            |_| Err(ParseError::LabelOnly),
+        ),
+        Some(_) => {
+            let (command, rest) = parse_command(rest)?;
+            Ok((Line::new(label, command), rest))
+        }
+        _ => Err(ParseError::EndOfProgram),
+    }
+}
+
+fn parse(input: &str) -> std::result::Result<Ast, ParseError> {
+    let mut lines = Vec::new();
+    let mut input = input;
+    let mut count = 0;
+    loop {
+        match parse_line(input) {
+            Ok((line, rest)) => {
+                lines.push(line);
+                input = rest;
+            }
+            Err(ParseError::EndOfProgram) => break,
+            Err(err) => {
+                println!("{}", count);
+                Err(err)?
             }
         }
-        Ok(())
+        count += 1;
     }
-}
-
-use std::collections::HashMap;
-
-impl<'a> Ast {
-    fn collect_labels(&'a self) -> HashMap<&'a String, Number> {
-        let mut h = HashMap::new();
-        for (
-            i,
-            &Line {
-                ref label,
-                statement: _,
-            },
-        ) in self.iter().enumerate()
-        {
-            if let Some(ref label) = label {
-                h.insert(label, Number::from(i));
-            }
-        }
-        h
-    }
-}
-
-pub struct Program(Vec<Statement>);
-
-impl Deref for Program {
-    type Target = Vec<Statement>;
-    fn deref(&self) -> &Vec<Statement> {
-        &self.0
-    }
-}
-
-impl DerefMut for Program {
-    fn deref_mut(&mut self) -> &mut Vec<Statement> {
-        &mut self.0
-    }
-}
-
-impl fmt::Display for Program {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for x in self.iter() {
-            if let Err(e) = write!(f, "{}\n", x) {
-                return Err(e);
-            }
-        }
-        Ok(())
-    }
-}
-
-impl Program {
-    fn new(ast: Ast) -> Option<Program> {
-        let labels = ast.collect_labels();
-        let mut program = Vec::<Statement>::new();
-        for (pc, x) in ast.iter().enumerate() {
-            match &x.statement {
-                Statement::Decr(index, address, value) => program.push(Statement::Decr(
-                    index.clone(),
-                    address.solve(&labels, pc)?.clone(),
-                    value.solve(&labels, pc)?,
-                )),
-                Statement::Incr(index, value) => {
-                    program.push(Statement::Incr(index.clone(), value.solve(&labels, pc)?))
-                }
-                Statement::Save(index, value) => {
-                    program.push(Statement::Save(index.clone(), value.solve(&labels, pc)?))
-                }
-                Statement::Putc(value) => program.push(Statement::Putc(value.solve(&labels, pc)?)),
-                Statement::Putn(value) => program.push(Statement::Putn(value.solve(&labels, pc)?)),
-                Statement::Halt => program.push(Statement::Halt),
-            }
-        }
-        Some(Program(program))
-    }
-}
-
-extern crate peg;
-
-peg::parser! {
-    grammar aaron_parser() for str {
-        rule ident() -> String = n:$(['a'..='z' | 'A'..='Z']+ ['a'..='z' | 'A'..='Z' | '0'..='9']*) { String::from(n) }
-        rule many_space() = [' ' | '\t']*
-        rule separator() = many_space() "," many_space()
-        rule comment() ->() = many_space() (";" [n if n!='\n'] *)?
-        rule number() -> Number = n:$((['-']? ['1'..='9'] ['0'..='9']*) / (['0'])) { n.parse().unwrap() }
-        rule index() -> Index
-            = "[" many_space() n:number() many_space() "]" { Index::Indirect(n) }
-            / n:number() { Index::Direct(n)}
-        rule value() -> Value
-            = "[[" many_space() n:number() many_space() "]]" {Value::Pointer(n)}
-            / "[" many_space() n:number() many_space() "]" {Value::Register(n)}
-            / i:ident() {if i=="pc" {Value::ProgramCounter} else {Value::Label(i)}}
-            / n:number() {Value::Immediate(n)}
-        rule address() -> Address
-            = "[" many_space() n:number() many_space() "]" {Address::Register(n)}
-            / "pc" {Address::ProgramCounter}
-            / n:ident() {Address::Label(n)}
-            / n:number() {Address::Immediate(n)}
-        rule command() -> Statement
-            = "incr" many_space() i:index() v:(separator() v:value(){v})? {
-                match v {
-                    Some(v) => Statement::Incr(i, v),
-                    None => Statement::Incr(i, Value::Immediate(Number::from(1)))
-                }
-            }
-            / "decr" many_space() i:index() separator() a:address() v:(separator() v:value(){v})? {
-                match v {
-                    Some(v) => Statement::Decr(i, a, v),
-                    None => Statement::Decr(i, a, Value::Immediate(Number::from(1)))
-                }
-            }
-            / "save" many_space() i:index() separator() v:value() { Statement::Save(i,v) }
-            / "putc" many_space() v:value() { Statement::Putc(v)}
-            / "putn" many_space() v:value() { Statement::Putn(v)}
-            / "halt" {Statement::Halt}
-        rule line() -> Line
-            = (comment() "\n")? label:ident()? many_space() c:command() comment() {Line::new(label, c)}
-        pub rule parse() -> Program = v:line() ** ("\r"? "\n") (comment() ** ("\r"? "\n"))? {? Program::new(Ast(v)).ok_or("unknown label") }
-    }
+    Ok(Ast(lines))
 }
 
 use std::str::FromStr;
@@ -292,10 +326,10 @@ impl FromStr for Program {
     type Err = String;
 
     fn from_str(source: &str) -> std::result::Result<Program, String> {
-        let ast = aaron_parser::parse(source);
+        let ast = parse(source);
         match ast {
-            Ok(ast) => Ok(ast),
-            Err(a) => Err(format!("parse error on Line {}", a.location)),
+            Ok(ast) => Ok(Program::new(ast).ok_or("Unknown label")?),
+            Err(err) => Err(format!("{:?}", err)),
         }
     }
 }

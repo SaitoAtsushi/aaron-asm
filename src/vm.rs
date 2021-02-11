@@ -1,6 +1,6 @@
-use super::compiler::*;
 extern crate num_bigint;
 extern crate num_traits;
+use crate::syntax_tree::{Address, Index, Number, Program, Statement, Value};
 use num_traits::ToPrimitive;
 const MEMORY_LIMIT: usize = 100000;
 
@@ -98,7 +98,12 @@ impl<'b, T: std::io::Write> MachineState<'b, T> {
                 &Statement::Putc(ref value) => {
                     self.program_counter += 1;
                     let value = self.eval(value);
-                    write!(self.output, "{}", std::char::from_u32(value.to_u32().unwrap()).unwrap()).unwrap();
+                    write!(
+                        self.output,
+                        "{}",
+                        std::char::from_u32(value.to_u32().unwrap()).unwrap()
+                    )
+                    .unwrap();
                 }
                 &Statement::Putn(ref value) => {
                     self.program_counter += 1;
